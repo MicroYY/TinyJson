@@ -371,8 +371,8 @@ static void test_parse_object() {
 static void test_parser_model()
 {
     jsonValue v;
-    InitValue(&v);
 
+    InitValue(&v);
     EXPECT_EQ_INT(PARSE_OK, ParseJsonString(&v,
         " [ "
             " { "
@@ -404,7 +404,9 @@ static void test_parser_model()
             " } "
         " ] "
     ));
+    FreeValue(&v);
 
+    InitValue(&v);
     EXPECT_EQ_INT(PARSE_OK, ParseJsonString(&v,
         "{ \
         \"vfi\": [\
@@ -547,6 +549,7 @@ static void test_parser_model()
         ]\
     }"
     ));
+    FreeValue(&v);
 }
 
 static void test_parse() {

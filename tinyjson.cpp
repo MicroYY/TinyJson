@@ -80,7 +80,7 @@ void FreeValue(jsonValue* v)
 			for (size_t i = 0; i < v->obj.size; i++)
 			{
 				free(v->obj.maps[i].key);
-				FreeValue(&v->obj.maps->value);
+				FreeValue(&v->obj.maps[i].value);
 			}
 			free(v->obj.maps);
 			break;
