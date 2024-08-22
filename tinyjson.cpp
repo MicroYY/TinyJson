@@ -1,50 +1,97 @@
-﻿
+﻿#include "tinyjson.h"
 #include <stdio.h>
-#include <assert.h>  /* assert() */
-#include <stdlib.h>  /* NULL */
+#include <assert.h>
 #include <errno.h>
 #include <cmath>
 #include <cstring>
-#include "tinyjson.h"
 
-#define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch) ((ch) >= '0' && (ch) <= '9')
 
 #define STACK_INIT_SIZE 256
 
-#define PUTC(c, ch) do { *(char*)ContextPush(c, sizeof(char)) = (ch); } while(0)
-
-typedef struct {
+struct parserStack {
 	const char* json;
 	char* stack;
 	size_t size, top;
-}lept_context;
 
-static int ParseValue(lept_context* c, lept_value* v);
+	~parserStack()
+	{
+		free(this->stack);
+	}
 
-double GetNumber(const lept_value* v) {
-	assert(v != NULL && v->type == LEPT_NUMBER);
-	return v->num;
-}
-void SetNumber(lept_value* v, double n) {
-	FreeValue(v);
-	v->num = n;
-	v->type = LEPT_NUMBER;
-}
+	// return old top
+	void* PushSz(size_t sz)
+	{
+		assert(sz > 0);
+		char* ret;
 
-const char* GetString(const lept_value* v)
+		if (this->top + sz >= this->size) {
+			if (this->size == 0) {
+				this->size = STACK_INIT_SIZE;
+			}
+			while (this->top + sz >= this->size) {
+				this->size += this->size >> 1;
+			}
+			void* ptr = realloc(this->stack, this->size);
+			assert(ptr);
+			this->stack = (char*)ptr;
+		}
+		ret = this->stack + this->top;
+		this->top += sz;
+
+		return ret;
+	}
+
+	void PushChar(char ch)
+	{
+		*(char*)PushSz(sizeof(char)) = ch;
+	}
+
+	void* Pop(size_t sz)
+	{
+		assert(this->top >= sz);
+		return this->stack + (this->top -= sz);
+	}
+};
+
+static parseStatus ParseValue(parserStack* c, jsonValue* v);
+
+void InitValue(jsonValue* v)
 {
-	assert(v && v->type == LEPT_STRING);
-	return v->str.s;
+	v->type = TYPE_NULL;
 }
 
-size_t GetStringLength(const lept_value* v)
+void FreeValue(jsonValue* v)
 {
-	assert(v && v->type == LEPT_STRING);
-	return v->str.len;
+	assert(v);
+	switch (v->type)
+	{
+		case TYPE_STRING:
+			free(v->str.s);
+			break;
+		case TYPE_ARRAY:
+			for (size_t i = 0; i < v->arr.size; i++)
+			{
+				FreeValue(&v->arr.values[i]);
+			}
+			free(v->arr.values);
+			break;
+		case TYPE_OBJECT:
+			for (size_t i = 0; i < v->obj.size; i++)
+			{
+				free(v->obj.maps[i].key);
+				FreeValue(&v->obj.maps->value);
+			}
+			free(v->obj.maps);
+			break;
+	default:
+		break;
+	}
+
+	v->type = TYPE_NULL;
 }
 
-void SetString(lept_value* v, const char* s, size_t len)
+void SetValueString(jsonValue* v, const char* s, size_t len)
 {
 	assert(v && (s || len == 0));
 	FreeValue(v);
@@ -52,105 +99,20 @@ void SetString(lept_value* v, const char* s, size_t len)
 	memcpy(v->str.s, s, len);
 	v->str.s[len] = '\0';
 	v->str.len = len;
-	v->type = LEPT_STRING;
+	v->type = TYPE_STRING;
 }
 
-void SetBoolean(lept_value* v, bool b)
-{
-	FreeValue(v);
-	v->type = b ? LEPT_TRUE : LEPT_FALSE;
-}
-
-bool GetBoolean(const lept_value* v)
-{
-	assert(v && (v->type == LEPT_TRUE || v->type == LEPT_FALSE));
-	return v->type == LEPT_TRUE;
-}
-
-size_t GetArraySize(const lept_value* v)
-{
-	assert(v && v->type == LEPT_ARRAY);
-	return v->arr.size;
-}
-
-lept_value* GetArrayElement(const lept_value* v, size_t index)
-{
-	assert(v && v->type == LEPT_ARRAY && index < v->arr.size);
-	return &v->arr.values[index];
-}
-
-size_t GetObjectSize(const lept_value* v)
-{
-	assert(v && v->type == LEPT_OBJECT);
-	return v->obj.size;
-}
-
-const char* GetObjectKey(const lept_value* v, size_t index)
-{
-	assert(v && v->type == LEPT_OBJECT);
-	assert(index < v->obj.size);
-	return v->obj.members[index].key;
-}
-
-size_t GetObjectKeyLength(const lept_value* v, size_t index)
-{
-	assert(v && v->type == LEPT_OBJECT);
-	assert(index < v->obj.size);
-	return v->obj.members[index].keyLen;
-}
-
-lept_value* GetObjectValue(const lept_value* v, size_t index)
-{
-	assert(v && v->type == LEPT_OBJECT);
-	assert(index < v->obj.size);
-	return &v->obj.members[index].value;
-}
-
-static void* ContextPush(lept_context* c, size_t size)
-{
-	assert(size > 0);
-
-	void* ret;
-
-	if (c->top + size >= c->size) {
-		if (c->size == 0) {
-			c->size = STACK_INIT_SIZE;
-		}
-		while (c->top + size >= c->size) {
-			c->size += c->size >> 1;
-		}
-		c->stack = (char*)realloc(c->stack, c->size);
-	}
-	ret = c->stack + c->top;
-	c->top += size;
-	return ret;
-}
-
-static void* ContextPop(lept_context* c, size_t size)
-{
-	assert(c->top >= size);
-	return c->stack + (c->top -= size);
-}
-
-void FreeValue(lept_value* v)
-{
-	assert(v);
-	if (v->type == LEPT_STRING) {
-		free(v->str.s);
-	}
-	v->type = LEPT_NULL;
-}
-
-static void ParseWhitespace(lept_context* c) {
+static void ParseWhitespace(parserStack* c) {
 	const char* p = c->json;
 	while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
 		p++;
 	c->json = p;
 }
 
-static int ParseStringRaw(lept_context* c, char** str, size_t& len)
+static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 {
-	EXPECT(c, '\"');
+	assert(*c->json == '\"');
+	c->json++;
 
 	size_t head = c->top;
 
@@ -160,67 +122,68 @@ static int ParseStringRaw(lept_context* c, char** str, size_t& len)
 		switch (ch) {
 		case '\\':
 			switch (*(p++)) {
-			case 'n':  PUTC(c, '\n'); break;
-			case '\"': PUTC(c, '\"'); break;
-			case '\\': PUTC(c, '\\'); break;
-			case '/':  PUTC(c, '/'); break;
-			case 'b':  PUTC(c, '\b'); break;
-			case 'f':  PUTC(c, '\f'); break;
-			case 'r':  PUTC(c, '\r'); break;
-			case 't':  PUTC(c, '\t'); break;
+			case 'n':  c->PushChar('\n'); break;
+			case '\"': c->PushChar('\"'); break;
+			case '\\': c->PushChar('\\'); break;
+			case '/':  c->PushChar('/');  break;
+			case 'b':  c->PushChar('\b'); break;
+			case 'f':  c->PushChar('\f'); break;
+			case 'r':  c->PushChar('\r'); break;
+			case 't':  c->PushChar('\t'); break;
 			default:
 				c->top = head;
-				return LEPT_PARSE_INVALID_STRING_ESCAPE;
+				return PARSE_ERR_INVALID_ESCAPE_CHAR;
 			}
 			break;
 		case '\"':
 			len = c->top - head;
 			c->json = p;
-			*str = (char*)ContextPop(c, len);
-			return LEPT_PARSE_OK;
+			*str = (char*)c->Pop(len);
+			return PARSE_OK;
 		case '\0':
 			c->top = head;
-			return LEPT_PARSE_MISS_QUOTATION_MARK;
+			return PARSE_ERR_MISS_QUOTATION_MARK;
 		default:
 			// if ch is control characters
 			if ((unsigned char)ch < 0x20) {
 				c->top = head;
-				return LEPT_PARSE_INVALID_STRING_CHAR;
+				return PARSE_ERR_CONTROL_CHAR;
 			}
-			PUTC(c, ch);
+			c->PushChar(ch);
 		}
 	}
 }
 
-static int ParseString(lept_context* c, lept_value* v)
+static parseStatus ParseString(parserStack* c, jsonValue* v)
 {
-	int ret;
+	parseStatus ret;
 
 	char* s;
 	size_t len;
-	if ((ret = ParseStringRaw(c, &s, len)) == LEPT_PARSE_OK) {
-		SetString(v, s, len);
+	if ((ret = ParseStringRaw(c, &s, len)) == PARSE_OK) {
+		SetValueString(v, s, len);
 	}
 	return ret;
 }
 
-static int ParseObject(lept_context* c, lept_value* v)
+static parseStatus ParseObject(parserStack* c, jsonValue* v)
 {
-	EXPECT(c, '{');
+	assert(*c->json == '{');
+	c->json++;
 
-	int ret = 0;
+	parseStatus ret = PARSE_OK;
 	size_t size = 0;
-	lept_member m;
+	jsonMap m;
 	m.key = nullptr;
 
 	ParseWhitespace(c);
 	if (*c->json == '}')
 	{
 		c->json++;
-		v->type = LEPT_OBJECT;
-		v->obj.members = nullptr;
+		v->type = TYPE_OBJECT;
+		v->obj.maps = nullptr;
 		v->obj.size = 0;
-		return LEPT_PARSE_OK;
+		return PARSE_OK;
 	}
 
 	while (1)
@@ -231,32 +194,34 @@ static int ParseObject(lept_context* c, lept_value* v)
 
 		if (*c->json != '"')
 		{
-			ret = LEPT_PARSE_MISS_KEY;
+			ret = PARSE_ERR_MISS_KEY;
 			break;
 		}
-		if ((ret = ParseStringRaw(c, &str, m.keyLen)) != LEPT_PARSE_OK)
+		if ((ret = ParseStringRaw(c, &str, m.keyLen)) != PARSE_OK)
 		{
 			break;
 		}
-		memcpy(m.key = (char*)realloc(m.key, m.keyLen + 1), str, m.keyLen);
+		void* ptr = realloc(m.key, m.keyLen + 1);
+		assert(ptr);
+		m.key = (char*)ptr;
+		memcpy(m.key, str, m.keyLen);
 		m.key[m.keyLen] = '\0';
 
-		
 		ParseWhitespace(c);
 		if (*c->json != ':')
 		{
-			ret = LEPT_PARSE_MISS_COLON;
+			ret = PARSE_ERR_MISS_COLON;
 			break;
 		}
 
 		c->json++;
 		ParseWhitespace(c);
 
-		if ((ret = ParseValue(c, &m.value)) != LEPT_PARSE_OK)
+		if ((ret = ParseValue(c, &m.value)) != PARSE_OK)
 		{
 			break;
 		}
-		memcpy(ContextPush(c, sizeof(lept_member)), &m, sizeof(lept_member));
+		memcpy(c->PushSz(sizeof(jsonMap)), &m, sizeof(jsonMap));
 
 		size++;
 		m.key = nullptr;
@@ -270,16 +235,16 @@ static int ParseObject(lept_context* c, lept_value* v)
 		}
 		else if (*c->json == '}')
 		{
-			size_t copySz = sizeof(lept_member) * size;
+			size_t copySz = sizeof(jsonMap) * size;
 			c->json++;
-			v->type = LEPT_OBJECT;
+			v->type = TYPE_OBJECT;
 			v->obj.size = size;
-			memcpy(v->obj.members = (lept_member*)malloc(copySz), ContextPop(c, copySz), copySz);
-			return LEPT_PARSE_OK;
+			memcpy(v->obj.maps = (jsonMap*)malloc(copySz), c->Pop(copySz), copySz);
+			return PARSE_OK;
 		}
 		else
 		{
-			ret = LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET;
+			ret = PARSE_ERR_MISS_COMMA_OR_CURLY_BRACKET;
 			break;
 		}
 	}
@@ -287,31 +252,32 @@ static int ParseObject(lept_context* c, lept_value* v)
 	free(m.key);
 	for (size_t i = 0; i < size; i++)
 	{
-		lept_member* m = (lept_member*)ContextPop(c, sizeof(lept_member));
+		jsonMap* m = (jsonMap*)c->Pop(sizeof(jsonMap));
 		free(m->key);
 		FreeValue(&m->value);
 	}
-	v->type = LEPT_NULL;
+	v->type = TYPE_NULL;
 
 	return ret;
 }
 
-static int ParseLiteral(lept_context* c, lept_value* v, const char* literal, lept_type type)
+static parseStatus ParseLiteral(parserStack* c, jsonValue* v, const char* literal, valueType type)
 {
-	EXPECT(c, literal[0]);
+	assert(*c->json == literal[0]);
+	c->json++;
 
 	size_t i;
 	for (i = 0; literal[i + 1] != '\0'; i++) {
 		if (c->json[i] != literal[i + 1]) {
-			return LEPT_PARSE_INVALID_VALUE;
+			return PARSE_ERR_INVALID_VALUE;
 		}
 	}
 	c->json += i;
 	v->type = type;
-	return LEPT_PARSE_OK;
+	return PARSE_OK;
 }
 
-static int ParseNumber(lept_context* c, lept_value* v) {
+static parseStatus ParseNumber(parserStack* c, jsonValue* v) {
 	const char* p = c->json;
 
 	bool isPositive = true;
@@ -321,18 +287,15 @@ static int ParseNumber(lept_context* c, lept_value* v) {
 	}
 
 	if (!ISDIGIT(*p)) {
-		return LEPT_PARSE_INVALID_VALUE;
+		return PARSE_ERR_INVALID_VALUE;
 	}
 
 	if (*p == '0') {
 		p++;
-		//if (*p != '\0' && *p != '.' && *p != 'e' && *p != 'E') {
-		//    return LEPT_PARSE_ROOT_NOT_SINGULAR;
-		//}
 	}
 	else {
 		if (!ISDIGIT(*p)) {
-			return LEPT_PARSE_INVALID_VALUE;
+			return PARSE_ERR_INVALID_VALUE;
 		}
 		for (p++; ISDIGIT(*p); p++) {
 		}
@@ -341,7 +304,7 @@ static int ParseNumber(lept_context* c, lept_value* v) {
 	if (*p == '.') {
 		p++;
 		if (!ISDIGIT(*p)) {
-			return LEPT_PARSE_INVALID_VALUE;
+			return PARSE_ERR_INVALID_VALUE;
 		}
 		for (p++; ISDIGIT(*p); p++) {
 		}
@@ -353,7 +316,7 @@ static int ParseNumber(lept_context* c, lept_value* v) {
 			p++;
 		}
 		if (!ISDIGIT(*p)) {
-			return LEPT_PARSE_INVALID_VALUE;
+			return PARSE_ERR_INVALID_VALUE;
 		}
 		for (p++; ISDIGIT(*p); p++) {
 		}
@@ -362,18 +325,19 @@ static int ParseNumber(lept_context* c, lept_value* v) {
 	errno = 0;
 	v->num = strtod(c->json, NULL);
 	if (errno == ERANGE && (v->num == HUGE_VAL || v->num == -HUGE_VAL)) {
-		return LEPT_PARSE_NUMBER_TOO_BIG;
+		return PARSE_ERR_NUMBER_OVERFLOW;
 	}
 	c->json = p;
-	v->type = LEPT_NUMBER;
-	return LEPT_PARSE_OK;
+	v->type = TYPE_NUMBER;
+	return PARSE_OK;
 }
 
-static int ParseArray(lept_context* c, lept_value* v)
+static parseStatus ParseArray(parserStack* c, jsonValue* v)
 {
-	EXPECT(c, '[');
+	assert(*c->json == '[');
+	c->json++;
 
-	int ret;
+	parseStatus ret;
 
 	size_t size = 0;
 
@@ -381,21 +345,21 @@ static int ParseArray(lept_context* c, lept_value* v)
 	if (*c->json == ']')
 	{
 		c->json++;
-		v->type = LEPT_ARRAY;
+		v->type = TYPE_ARRAY;
 		v->arr.size = 0;
 		v->arr.values = nullptr;
-		return LEPT_PARSE_OK;
+		return PARSE_OK;
 	}
 	while (1)
 	{
-		lept_value e;
+		jsonValue e;
 		InitValue(&e);
 		ParseWhitespace(c);
-		if (ret = ParseValue(c, &e) != LEPT_PARSE_OK)
+		if ((ret = ParseValue(c, &e)) != PARSE_OK)
 		{
 			break;
 		}
-		memcpy(ContextPush(c, sizeof(lept_value)), &e, sizeof(lept_value));
+		memcpy(c->PushSz(sizeof(jsonValue)), &e, sizeof(jsonValue));
 		size++;
 
 		ParseWhitespace(c);
@@ -407,32 +371,32 @@ static int ParseArray(lept_context* c, lept_value* v)
 		else if (*c->json == ']')
 		{
 			c->json++;
-			v->type = LEPT_ARRAY;
+			v->type = TYPE_ARRAY;
 			v->arr.size = size;
-			v->arr.values = (lept_value*)malloc(size * sizeof(lept_value));
-			memcpy(v->arr.values, ContextPop(c, size * sizeof(lept_value)), size * sizeof(lept_value));
-			return LEPT_PARSE_OK;
+			v->arr.values = (jsonValue*)malloc(size * sizeof(jsonValue));
+			memcpy(v->arr.values, c->Pop(size * sizeof(jsonValue)), size * sizeof(jsonValue));
+			return PARSE_OK;
 		}
 		else
 		{
-			ret = LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+			ret = PARSE_ERR_MISS_COMMA_OR_SQUARE_BRACKET;
 			break;
 		}
 	}
 
 	for (size_t i = 0; i < size; i++) {
-		FreeValue((lept_value*)ContextPop(c, sizeof(lept_value)));
+		FreeValue((jsonValue*)c->Pop(sizeof(jsonValue)));
 	}
 
 	return ret;
 }
 
-static int ParseValue(lept_context* c, lept_value* v) {
+static parseStatus ParseValue(parserStack* c, jsonValue* v) {
 	switch (*c->json) {
-	case 't':  return ParseLiteral(c, v, "true", LEPT_TRUE);
-	case 'f':  return ParseLiteral(c, v, "false", LEPT_FALSE);
-	case 'n':  return ParseLiteral(c, v, "null", LEPT_NULL);
-	case '\0': return LEPT_PARSE_EXPECT_VALUE;
+	case 't':  return ParseLiteral(c, v, "true", TYPE_TRUE);
+	case 'f':  return ParseLiteral(c, v, "false", TYPE_FALSE);
+	case 'n':  return ParseLiteral(c, v, "null", TYPE_NULL);
+	case '\0': return PARSE_ERR_EXPECT_VALUE;
 	case '"':  return ParseString(c, v);
 	case '[':  return ParseArray(c, v);
 	case '{':  return ParseObject(c, v);
@@ -440,32 +404,104 @@ static int ParseValue(lept_context* c, lept_value* v) {
 	}
 }
 
-int lept_parse(lept_value* v, const char* json) {
+parseStatus ParseJsonString(jsonValue* v, const char* json) {
 	assert(v != NULL);
 
-	lept_context c;
+	parserStack c;
 	c.json = json;
 	c.stack = nullptr;
 	c.size = c.top = 0;
 
 	InitValue(v);
 
-	int ret;
+	parseStatus ret;
 
 	ParseWhitespace(&c);
-	if ((ret = ParseValue(&c, v)) == LEPT_PARSE_OK) {
+	if ((ret = ParseValue(&c, v)) == PARSE_OK) {
 		ParseWhitespace(&c);
 		if (*c.json != '\0') {
-			v->type = LEPT_NULL;
-			ret = LEPT_PARSE_ROOT_NOT_SINGULAR;
+			v->type = TYPE_NULL;
+			ret = PARSE_ERR_ROOT_NOT_SINGULAR;
 		}
 	}
 	assert(!c.top);
-	free(c.stack);
 	return ret;
 }
 
-lept_type lept_get_type(const lept_value* v) {
+valueType GetValueType(const jsonValue* v) {
 	assert(v != NULL);
 	return v->type;
+}
+
+double GetValueNumber(const jsonValue* v) {
+	assert(v && v->type == TYPE_NUMBER);
+	return v->num;
+}
+void SetValueNumber(jsonValue* v, double n) {
+	FreeValue(v);
+	v->num = n;
+	v->type = TYPE_NUMBER;
+}
+
+const char* GetValueString(const jsonValue* v)
+{
+	assert(v && v->type == TYPE_STRING);
+	return v->str.s;
+}
+
+size_t GetValueStringLength(const jsonValue* v)
+{
+	assert(v && v->type == TYPE_STRING);
+	return v->str.len;
+}
+
+void SetValueBoolean(jsonValue* v, bool b)
+{
+	FreeValue(v);
+	v->type = b ? TYPE_TRUE : TYPE_FALSE;
+}
+
+bool GetValueBoolean(const jsonValue* v)
+{
+	assert(v && (v->type == TYPE_TRUE || v->type == TYPE_FALSE));
+	return v->type == TYPE_TRUE;
+}
+
+size_t GetValueArraySize(const jsonValue* v)
+{
+	assert(v && v->type == TYPE_ARRAY);
+	return v->arr.size;
+}
+
+jsonValue* GetValueArrayElement(const jsonValue* v, size_t index)
+{
+	assert(v && v->type == TYPE_ARRAY && index < v->arr.size);
+	return &v->arr.values[index];
+}
+
+size_t GetValueObjectSize(const jsonValue* v)
+{
+	assert(v && v->type == TYPE_OBJECT);
+	return v->obj.size;
+}
+
+const char* GetValueObjectKey(const jsonValue* v, size_t index)
+{
+	assert(v && v->type == TYPE_OBJECT);
+	assert(index < v->obj.size);
+	return v->obj.maps[index].key;
+}
+
+size_t GetValueObjectKeyLength(const jsonValue* v, size_t index)
+{
+	assert(v && v->type == TYPE_OBJECT);
+	assert(index < v->obj.size);
+	return v->obj.maps[index].keyLen;
+}
+
+jsonValue* GetValueObjectValue(const jsonValue* v, size_t index)
+{
+	assert(v && v->type == TYPE_OBJECT);
+	assert(index < v->obj.size);
+	return &v->obj.maps[index].value;
 }

@@ -1,77 +1,74 @@
-#ifndef LEPTJSON_H__
-#define LEPTJSON_H__
+#ifndef JSON_PARSER_H__
+#define JSON_PARSER_H__
 
 #include <stdio.h>
 
-enum lept_type 
+enum valueType
 {
-    LEPT_NULL,
-    LEPT_FALSE,
-    LEPT_TRUE,
-    LEPT_NUMBER,
-    LEPT_STRING,
-    LEPT_ARRAY,
-    LEPT_OBJECT
+    TYPE_NULL,
+    TYPE_FALSE,
+    TYPE_TRUE,
+    TYPE_NUMBER,
+    TYPE_STRING,
+    TYPE_ARRAY,
+    TYPE_OBJECT
 };
 
-enum ParseStatus{
-    LEPT_PARSE_OK = 0,
-    LEPT_PARSE_EXPECT_VALUE,
-    LEPT_PARSE_INVALID_VALUE,
-    LEPT_PARSE_ROOT_NOT_SINGULAR,
-    LEPT_PARSE_NUMBER_TOO_BIG,
-    LEPT_PARSE_MISS_QUOTATION_MARK,
-    LEPT_PARSE_INVALID_STRING_ESCAPE,
-    LEPT_PARSE_INVALID_STRING_CHAR,
-    LEPT_PARSE_INVALID_UNICODE_HEX,
-    LEPT_PARSE_INVALID_UNICODE_SURROGATE,
-    LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET,
-    LEPT_PARSE_MISS_KEY,
-    LEPT_PARSE_MISS_COLON,
-    LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET
+enum parseStatus {
+    PARSE_OK = 0,
+    PARSE_ERR_EXPECT_VALUE,
+    PARSE_ERR_INVALID_VALUE,
+    PARSE_ERR_ROOT_NOT_SINGULAR,
+    PARSE_ERR_NUMBER_OVERFLOW,
+    PARSE_ERR_MISS_QUOTATION_MARK,
+    PARSE_ERR_INVALID_ESCAPE_CHAR,
+    PARSE_ERR_CONTROL_CHAR,
+    PARSE_ERR_MISS_COMMA_OR_SQUARE_BRACKET,
+    PARSE_ERR_MISS_KEY,
+    PARSE_ERR_MISS_COLON,
+    PARSE_ERR_MISS_COMMA_OR_CURLY_BRACKET
 };
 
-struct lept_member;
+struct jsonMap;
 
-struct lept_value {
-    lept_type type;
+struct jsonValue {
+    valueType type;
     union {
-        struct { lept_member* members; size_t size; } obj;
-        struct { lept_value* values; size_t size; } arr;
+        struct { jsonMap* maps; size_t size; } obj;
+        struct { jsonValue* values; size_t size; } arr;
         struct { char* s; size_t len; } str;
         double num;
     };
 };
 
-struct lept_member {
+struct jsonMap {
     char* key;
     size_t keyLen;
-    lept_value value;
+    jsonValue value;
 };
 
-void FreeValue(lept_value* v);
-#define InitValue(v) (v)->type = LEPT_NULL;
-#define SetNull(v) FreeValue(v)
+void InitValue(jsonValue* v);
+void FreeValue(jsonValue* v);
 
-int lept_parse(lept_value* v, const char* json);
-lept_type lept_get_type(const lept_value* v);
+parseStatus ParseJsonString(jsonValue* v, const char* json);
+valueType   GetValueType(const jsonValue* v);
 
-double GetNumber(const lept_value* v);
-void SetNumber(lept_value* v, double n);
+double GetValueNumber(const jsonValue* v);
+void   SetValueNumber(jsonValue* v, double n);
 
-const char* GetString(const lept_value* v);
-size_t GetStringLength(const lept_value* v);
-void SetString(lept_value* v, const char* s, size_t len);
+const char* GetValueString(const jsonValue* v);
+size_t      GetValueStringLength(const jsonValue* v);
+void        SetValueString(jsonValue* v, const char* s, size_t len);
 
-void SetBoolean(lept_value* v, bool b);
-bool GetBoolean(const lept_value* v);
+void SetValueBoolean(jsonValue* v, bool b);
+bool GetValueBoolean(const jsonValue* v);
 
-size_t GetArraySize(const lept_value* v);
-lept_value* GetArrayElement(const lept_value* v, size_t index);
+size_t     GetValueArraySize(const jsonValue* v);
+jsonValue* GetValueArrayElement(const jsonValue* v, size_t index);
 
-size_t GetObjectSize(const lept_value* v);
-const char* GetObjectKey(const lept_value* v, size_t index);
-size_t GetObjectKeyLength(const lept_value* v, size_t index);
-lept_value* GetObjectValue(const lept_value* v, size_t index);
+size_t      GetValueObjectSize(const jsonValue* v);
+const char* GetValueObjectKey(const jsonValue* v, size_t index);
+size_t      GetValueObjectKeyLength(const jsonValue* v, size_t index);
+jsonValue* GetValueObjectValue(const jsonValue* v, size_t index);
 
-#endif /* LEPTJSON_H__ */
+#endif /* JSON_PARSER_H__ */
