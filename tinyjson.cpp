@@ -9,6 +9,8 @@
 
 #define STACK_INIT_SIZE 256
 
+#define STRING_ERROR(ret) { c->top = head; return ret; }
+
 struct parserStack {
 	const char* json;
 	char* stack;
@@ -109,6 +111,48 @@ static void ParseWhitespace(parserStack* c) {
 	c->json = p;
 }
 
+static const char* ParseHex4(const char* p, unsigned* u)
+{
+	*u = 0;
+	for (int i = 0; i < 4; i++) {
+		char c = *p;
+		p++;
+		*u <<= 4;
+		if (c >= '0' && c <= '9') {
+			*u |= c - '0';
+		}
+		else if (c >= 'A' && c <= 'F') {
+			*u |= c - ('A' - 10);
+		}
+		else if (c >= 'a' && c <= 'f') {
+			*u |= c - ('a' - 10);
+		}
+		else return nullptr;
+	}
+	return p;
+}
+
+static void EncodeUtf8(parserStack* c, unsigned u) {
+	if (u <= 0x7F)
+		c->PushChar(u & 0xff);
+	else if (u <= 0x7FF) {
+		c->PushChar(0xC0 | ((u >> 6) & 0xFF));
+		c->PushChar(0x80 | (u & 0x3F));
+	}
+	else if (u <= 0xFFFF) {
+		c->PushChar(0xE0 | ((u >> 12) & 0xFF));
+		c->PushChar(0x80 | ((u >> 6) & 0x3F));
+		c->PushChar(0x80 | (u & 0x3F));
+	}
+	else {
+		assert(u <= 0x10FFFF);
+		c->PushChar(0xF0 | ((u >> 18) & 0xFF));
+		c->PushChar(0x80 | ((u >> 12) & 0x3F));
+		c->PushChar(0x80 | ((u >> 6) & 0x3F));
+		c->PushChar(0x80 | (u & 0x3F));
+	}
+}
+
 static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 {
 	assert(*c->json == '\"');
@@ -130,9 +174,30 @@ static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 			case 'f':  c->PushChar('\f'); break;
 			case 'r':  c->PushChar('\r'); break;
 			case 't':  c->PushChar('\t'); break;
+			case 'u':
+			{
+				unsigned H = 0, L = 0, codePoint = 0;
+				if (!(p = ParseHex4(p, &H)))
+					STRING_ERROR(PARSE_ERR_INVALID_UNICODE_HEX);
+				if (H >= 0xD800 && H <= 0xDBFF) { /* surrogate pair */
+					if (*p++ != '\\')
+						STRING_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE);
+					if (*p++ != 'u')
+						STRING_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE);
+					if (!(p = ParseHex4(p, &L)))
+						STRING_ERROR(PARSE_ERR_INVALID_UNICODE_HEX);
+					if (L < 0xDC00 || L > 0xDFFF)
+						STRING_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE);
+					codePoint = (((H - 0xD800) << 10) | (L - 0xDC00)) + 0x10000;
+					EncodeUtf8(c, codePoint);
+				}
+				else {
+					
+				}
+				break;
+			}
 			default:
-				c->top = head;
-				return PARSE_ERR_INVALID_ESCAPE_CHAR;
+				STRING_ERROR(PARSE_ERR_INVALID_ESCAPE_CHAR);
 			}
 			break;
 		case '\"':
@@ -141,13 +206,11 @@ static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 			*str = (char*)c->Pop(len);
 			return PARSE_OK;
 		case '\0':
-			c->top = head;
-			return PARSE_ERR_MISS_QUOTATION_MARK;
+			STRING_ERROR(PARSE_ERR_MISS_QUOTATION_MARK);
 		default:
 			// if ch is control characters
 			if ((unsigned char)ch < 0x20) {
-				c->top = head;
-				return PARSE_ERR_CONTROL_CHAR;
+				STRING_ERROR(PARSE_ERR_CONTROL_CHAR);
 			}
 			c->PushChar(ch);
 		}

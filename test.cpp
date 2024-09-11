@@ -1,4 +1,4 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -184,6 +184,7 @@ static void test_parse_string() {
     TEST_STRING("\\", "\"\\\\\"");
     TEST_STRING("//", "\"\\//\"");
     TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+    TEST_STRING("你好", "\"你好\"");
 }
 
 static void test_access_boolean() {
@@ -216,28 +217,34 @@ static void test_access_string() {
     FreeValue(&v);
 }
 
-//static void test_parse_invalid_unicode_hex() {
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u0\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u01\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u012\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u/000\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\uG000\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u0/00\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u0G00\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u00/0\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u00G0\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u000/\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX, "\"\\u000G\"");
-//}
-//
-//static void test_parse_invalid_unicode_surrogate() {
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uDBFF\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\\\\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uDBFF\"");
-//    TEST_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uE000\"");
-//}
+static void test_parse_valid_unicode_hex()
+{   
+    char c[5] = { 0xf0, 0x9d, 0x84, 0x9e, '\0'};
+    TEST_STRING(c, "\"\\uD834\\uDD1E\"");
+}
+
+static void test_parse_invalid_unicode_hex() {
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u0\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u01\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u012\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u/000\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\uG000\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u0/00\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u0G00\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u00/0\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u00G0\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u000/\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_HEX, "\"\\u000G\"");
+}
+
+static void test_parse_invalid_unicode_surrogate() {
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE, "\"\\uD800\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE, "\"\\uDBFF\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE, "\"\\uD800\\\\\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uDBFF\"");
+    TEST_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uE000\"");
+}
 
 static void test_parse_miss_comma_or_square_bracket() {
     TEST_ERROR(PARSE_ERR_MISS_COMMA_OR_SQUARE_BRACKET, "[1");
@@ -368,7 +375,7 @@ static void test_parse_object() {
     FreeValue(&v);
 }
 
-static void test_parser_model()
+static void test_parser_combination()
 {
     jsonValue v;
 
@@ -376,178 +383,32 @@ static void test_parser_model()
     EXPECT_EQ_INT(PARSE_OK, ParseJsonString(&v,
         " [ "
             " { "
-                "\"vfi\": [ "
+                "\"obj1_key\": [ "
                     " { "
-                        "\"model weights\": ["
+                        "\"subobj1_key\": ["
                             " { "
-                                "\"platform\": \"common\","
-                                "\"blocks_0_conv_0_0_w_bin\" : [0, 0] ,"
-                                "\"blocks_0_deconv_0_b_bin\" : [0, 100]"
+                                "\"str_key\": \"str_val\","
+                                "\"arr_key\" : [0, 0],"
+                                "\"num_key\" : 100"
                             " } "
                        " ] "
                     " } "
                 " ] "
             " }, "
-
             " { "
-                "\"vfi\": [ "
+                "\"obj2_key\": [ "
                     " { "
-                        "\"model weights\": ["
+                        "\"subobj2_key\": ["
                             " { "
-                                "\"platform\": \"common\","
-                                "\"blocks_0_conv_0_0_w_bin\" : [0, 0] ,"
-                                "\"blocks_0_deconv_0_b_bin\" : [0, 100]"
+                                "\"true_key\": true,"
+                                "\"false_key\" : false ,"
+                                "\"null_key\" : null"
                             " } "
                         " ] "
                     " } "
                 " ] "
             " } "
         " ] "
-    ));
-    FreeValue(&v);
-
-    InitValue(&v);
-    EXPECT_EQ_INT(PARSE_OK, ParseJsonString(&v,
-        "{ \
-        \"vfi\": [\
-        {\
-            \"model weights\": [\
-            {\
-                \"platform\": \"common\",\
-                    \"blocks_0_conv_0_0_w\" : [0, 2304] ,\
-                    \"blocks_0_deconv_0_b\" : [2304, 128] ,\
-                    \"blocks_0_deconv_0_w\" : [2432, 7168] ,\
-                    \"blocks_1_conv_0_0_b\" : [9600, 384] ,\
-                    \"blocks_1_conv_0_0_w\" : [9984, 5184] ,\
-                    \"blocks_1_deconv_0_b\" : [15168, 128] ,\
-                    \"blocks_1_deconv_0_w\" : [15296, 4096] ,\
-                    \"blocks_2_conv_0_0_b\" : [19392, 192] ,\
-                    \"blocks_2_conv_0_0_w\" : [19584, 2592] ,\
-                    \"blocks_2_deconv_0_b\" : [22176, 128] ,\
-                    \"blocks_2_deconv_0_w\" : [22304, 2048] ,\
-                    \"decoder_residual_1_shortcut_b\" : [24352, 64] ,\
-                    \"decoder_residual_2_shortcut_b\" : [24416, 64] ,\
-                    \"decoder_residual_3_shortcut_b\" : [24480, 192] ,\
-                    \"multiplier0\" : [24672, 132]\
-            },\
-                {\
-                    \"platform\": \"xe\",\
-                    \"blocks_0_conv_1_0_b\" : [24804, 2240] ,\
-                    \"blocks_0_conv_1_0_w\" : [27044, 258048] ,\
-                    \"blocks_0_conv_block_0_0_b\" : [285092, 2240] ,\
-                    \"blocks_0_conv_block_0_0_w\" : [287332, 451584] ,\
-                    \"blocks_0_conv_block_1_0_b\" : [738916, 2240] ,\
-                    \"blocks_0_conv_block_1_0_w\" : [741156, 451584] ,\
-                    \"blocks_0_conv_block_2_0_b\" : [1192740, 2240] ,\
-                    \"blocks_0_conv_block_2_0_w\" : [1194980, 451584] ,\
-                    \"blocks_0_conv_block_3_0_b\" : [1646564, 2240] ,\
-                    \"blocks_0_conv_block_3_0_w\" : [1648804, 451584] ,\
-                    \"blocks_0_conv_block_4_0_b\" : [2100388, 2240] ,\
-                    \"blocks_0_conv_block_4_0_w\" : [2102628, 451584] ,\
-                    \"blocks_0_conv_block_5_0_b\" : [2554212, 2240] ,\
-                    \"blocks_0_conv_block_5_0_w\" : [2556452, 451584] ,\
-                    \"blocks_0_conv_block_6_0_b\" : [3008036, 2240] ,\
-                    \"blocks_0_conv_block_6_0_w\" : [3010276, 451584] ,\
-                    \"blocks_0_conv_block_7_0_b\" : [3461860, 2240] ,\
-                    \"blocks_0_conv_block_7_0_w\" : [3464100, 451584] ,\
-                    \"blocks_1_conv_1_0_b\" : [3915684, 1280] ,\
-                    \"blocks_1_conv_1_0_w\" : [3916964, 73728] ,\
-                    \"blocks_1_conv_block_0_0_b\" : [3990692, 1280] ,\
-                    \"blocks_1_conv_block_0_0_w\" : [3991972, 147456] ,\
-                    \"blocks_1_conv_block_1_0_b\" : [4139428, 1280] ,\
-                    \"blocks_1_conv_block_1_0_w\" : [4140708, 147456] ,\
-                    \"blocks_1_conv_block_2_0_b\" : [4288164, 1280] ,\
-                    \"blocks_1_conv_block_2_0_w\" : [4289444, 147456] ,\
-                    \"blocks_1_conv_block_3_0_b\" : [4436900, 1280] ,\
-                    \"blocks_1_conv_block_3_0_w\" : [4438180, 147456] ,\
-                    \"blocks_1_conv_block_4_0_b\" : [4585636, 1280] ,\
-                    \"blocks_1_conv_block_4_0_w\" : [4586916, 147456] ,\
-                    \"blocks_1_conv_block_5_0_b\" : [4734372, 1280] ,\
-                    \"blocks_1_conv_block_5_0_w\" : [4735652, 147456] ,\
-                    \"blocks_1_conv_block_6_0_b\" : [4883108, 1280] ,\
-                    \"blocks_1_conv_block_6_0_w\" : [4884388, 147456] ,\
-                    \"blocks_1_conv_block_7_0_b\" : [5031844, 1280] ,\
-                    \"blocks_1_conv_block_7_0_w\" : [5033124, 147456] ,\
-                    \"blocks_2_conv_1_0_b\" : [5180580, 640] ,\
-                    \"blocks_2_conv_1_0_w\" : [5181220, 18432] ,\
-                    \"blocks_2_conv_block_0_0_b\" : [5199652, 640] ,\
-                    \"blocks_2_conv_block_0_0_w\" : [5200292, 36864] ,\
-                    \"blocks_2_conv_block_1_0_b\" : [5237156, 640] ,\
-                    \"blocks_2_conv_block_1_0_w\" : [5237796, 36864] ,\
-                    \"blocks_2_conv_block_2_0_b\" : [5274660, 640] ,\
-                    \"blocks_2_conv_block_2_0_w\" : [5275300, 36864] ,\
-                    \"blocks_2_conv_block_3_0_b\" : [5312164, 640] ,\
-                    \"blocks_2_conv_block_3_0_w\" : [5312804, 36864] ,\
-                    \"blocks_2_conv_block_4_0_b\" : [5349668, 640] ,\
-                    \"blocks_2_conv_block_4_0_w\" : [5350308, 36864] ,\
-                    \"blocks_2_conv_block_5_0_b\" : [5387172, 640] ,\
-                    \"blocks_2_conv_block_5_0_w\" : [5387812, 36864] ,\
-                    \"blocks_2_conv_block_6_0_b\" : [5424676, 640] ,\
-                    \"blocks_2_conv_block_6_0_w\" : [5425316, 36864] ,\
-                    \"blocks_2_conv_block_7_0_b\" : [5462180, 640] ,\
-                    \"blocks_2_conv_block_7_0_w\" : [5462820, 36864]\
-                },\
-                {\
-                    \"platform\": \"xe2\",\
-                    \"blocks_0_conv_1_0_b\" : [5499684, 2240] ,\
-                    \"blocks_0_conv_1_0_w\" : [5501924, 258048] ,\
-                    \"blocks_0_conv_block_0_0_b\" : [5759972, 2240] ,\
-                    \"blocks_0_conv_block_0_0_w\" : [5762212, 451584] ,\
-                    \"blocks_0_conv_block_1_0_b\" : [6213796, 2240] ,\
-                    \"blocks_0_conv_block_1_0_w\" : [6216036, 451584] ,\
-                    \"blocks_0_conv_block_2_0_b\" : [6667620, 2240] ,\
-                    \"blocks_0_conv_block_2_0_w\" : [6669860, 451584] ,\
-                    \"blocks_0_conv_block_3_0_b\" : [7121444, 2240] ,\
-                    \"blocks_0_conv_block_3_0_w\" : [7123684, 451584] ,\
-                    \"blocks_0_conv_block_4_0_b\" : [7575268, 2240] ,\
-                    \"blocks_0_conv_block_4_0_w\" : [7577508, 451584] ,\
-                    \"blocks_0_conv_block_5_0_b\" : [8029092, 2240] ,\
-                    \"blocks_0_conv_block_5_0_w\" : [8031332, 451584] ,\
-                    \"blocks_0_conv_block_6_0_b\" : [8482916, 2240] ,\
-                    \"blocks_0_conv_block_6_0_w\" : [8485156, 451584] ,\
-                    \"blocks_0_conv_block_7_0_b\" : [8936740, 2240] ,\
-                    \"blocks_0_conv_block_7_0_w\" : [8938980, 451584] ,\
-                    \"blocks_1_conv_1_0_b\" : [9390564, 1280] ,\
-                    \"blocks_1_conv_1_0_w\" : [9391844, 73728] ,\
-                    \"blocks_1_conv_block_0_0_b\" : [9465572, 1280] ,\
-                    \"blocks_1_conv_block_0_0_w\" : [9466852, 147456] ,\
-                    \"blocks_1_conv_block_1_0_b\" : [9614308, 1280] ,\
-                    \"blocks_1_conv_block_1_0_w\" : [9615588, 147456] ,\
-                    \"blocks_1_conv_block_2_0_b\" : [9763044, 1280] ,\
-                    \"blocks_1_conv_block_2_0_w\" : [9764324, 147456] ,\
-                    \"blocks_1_conv_block_3_0_b\" : [9911780, 1280] ,\
-                    \"blocks_1_conv_block_3_0_w\" : [9913060, 147456] ,\
-                    \"blocks_1_conv_block_4_0_b\" : [10060516, 1280] ,\
-                    \"blocks_1_conv_block_4_0_w\" : [10061796, 147456] ,\
-                    \"blocks_1_conv_block_5_0_b\" : [10209252, 1280] ,\
-                    \"blocks_1_conv_block_5_0_w\" : [10210532, 147456] ,\
-                    \"blocks_1_conv_block_6_0_b\" : [10357988, 1280] ,\
-                    \"blocks_1_conv_block_6_0_w\" : [10359268, 147456] ,\
-                    \"blocks_1_conv_block_7_0_b\" : [10506724, 1280] ,\
-                    \"blocks_1_conv_block_7_0_w\" : [10508004, 147456] ,\
-                    \"blocks_2_conv_1_0_b\" : [10655460, 640] ,\
-                    \"blocks_2_conv_1_0_w\" : [10656100, 18432] ,\
-                    \"blocks_2_conv_block_0_0_b\" : [10674532, 640] ,\
-                    \"blocks_2_conv_block_0_0_w\" : [10675172, 36864] ,\
-                    \"blocks_2_conv_block_1_0_b\" : [10712036, 640] ,\
-                    \"blocks_2_conv_block_1_0_w\" : [10712676, 36864] ,\
-                    \"blocks_2_conv_block_2_0_b\" : [10749540, 640] ,\
-                    \"blocks_2_conv_block_2_0_w\" : [10750180, 36864] ,\
-                    \"blocks_2_conv_block_3_0_b\" : [10787044, 640] ,\
-                    \"blocks_2_conv_block_3_0_w\" : [10787684, 36864] ,\
-                    \"blocks_2_conv_block_4_0_b\" : [10824548, 640] ,\
-                    \"blocks_2_conv_block_4_0_w\" : [10825188, 36864] ,\
-                    \"blocks_2_conv_block_5_0_b\" : [10862052, 640] ,\
-                    \"blocks_2_conv_block_5_0_w\" : [10862692, 36864] ,\
-                    \"blocks_2_conv_block_6_0_b\" : [10899556, 640] ,\
-                    \"blocks_2_conv_block_6_0_w\" : [10900196, 36864] ,\
-                    \"blocks_2_conv_block_7_0_b\" : [10937060, 640] ,\
-                    \"blocks_2_conv_block_7_0_w\" : [10937700, 36864]\
-                }\
-            ]\
-        }\
-        ]\
-    }"
     ));
     FreeValue(&v);
 }
@@ -571,9 +432,9 @@ static void test_parse() {
     test_access_number();
     test_access_string();
 
-    // todo
-    //test_parse_invalid_unicode_hex();
-    //test_parse_invalid_unicode_surrogate();
+    test_parse_valid_unicode_hex();
+    test_parse_invalid_unicode_hex();
+    test_parse_invalid_unicode_surrogate();
 
     test_parse_array();
 
@@ -593,12 +454,11 @@ static void test_access() {
 }
 
 int main() {
-    while (1) {
-        test_parse();
-        test_access();
-        test_parser_model();
-        printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);
-    }
+    test_parse();
+    test_access();
+    test_parser_combination();
+    printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);
+
     system("pause");
     return main_ret;
 }
