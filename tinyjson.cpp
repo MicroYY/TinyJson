@@ -8,15 +8,16 @@
 #define ISDIGIT(ch) ((ch) >= '0' && (ch) <= '9')
 
 #define STACK_INIT_SIZE 256
+#define PARSE_STRINGIFY_INIT_SIZE 256
 
 #define STRING_ERROR(ret) { c->top = head; return ret; }
 
-struct parserStack {
+struct parserContext {
 	const char* json;
 	char* stack;
 	size_t size, top;
 
-	~parserStack()
+	~parserContext()
 	{
 		free(this->stack);
 	}
@@ -49,6 +50,11 @@ struct parserStack {
 		*(char*)PushSz(sizeof(char)) = ch;
 	}
 
+	void PushStr(const char* str, size_t sz)
+	{
+		memcpy(PushSz(sz), str, sz);
+	}
+
 	void* Pop(size_t sz)
 	{
 		assert(this->top >= sz);
@@ -56,7 +62,7 @@ struct parserStack {
 	}
 };
 
-static parseStatus ParseValue(parserStack* c, jsonValue* v);
+static parseStatus ParseValue(parserContext* c, jsonValue* v);
 
 void InitValue(jsonValue* v)
 {
@@ -104,7 +110,7 @@ void SetValueString(jsonValue* v, const char* s, size_t len)
 	v->type = TYPE_STRING;
 }
 
-static void ParseWhitespace(parserStack* c) {
+static void ParseWhitespace(parserContext* c) {
 	const char* p = c->json;
 	while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
 		p++;
@@ -132,7 +138,7 @@ static const char* ParseHex4(const char* p, unsigned* u)
 	return p;
 }
 
-static void EncodeUtf8(parserStack* c, unsigned u) {
+static void EncodeUtf8(parserContext* c, unsigned u) {
 	if (u <= 0x7F)
 		c->PushChar(u & 0xff);
 	else if (u <= 0x7FF) {
@@ -153,7 +159,7 @@ static void EncodeUtf8(parserStack* c, unsigned u) {
 	}
 }
 
-static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
+static parseStatus ParseStringRaw(parserContext* c, char** str, size_t& len)
 {
 	assert(*c->json == '\"');
 	c->json++;
@@ -189,11 +195,12 @@ static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 					if (L < 0xDC00 || L > 0xDFFF)
 						STRING_ERROR(PARSE_ERR_INVALID_UNICODE_SURROGATE);
 					codePoint = (((H - 0xD800) << 10) | (L - 0xDC00)) + 0x10000;
-					EncodeUtf8(c, codePoint);
+					//EncodeUtf8(c, codePoint);
 				}
 				else {
-					
+					codePoint = H;
 				}
+				EncodeUtf8(c, codePoint);
 				break;
 			}
 			default:
@@ -217,7 +224,7 @@ static parseStatus ParseStringRaw(parserStack* c, char** str, size_t& len)
 	}
 }
 
-static parseStatus ParseString(parserStack* c, jsonValue* v)
+static parseStatus ParseString(parserContext* c, jsonValue* v)
 {
 	parseStatus ret;
 
@@ -229,7 +236,7 @@ static parseStatus ParseString(parserStack* c, jsonValue* v)
 	return ret;
 }
 
-static parseStatus ParseObject(parserStack* c, jsonValue* v)
+static parseStatus ParseObject(parserContext* c, jsonValue* v)
 {
 	assert(*c->json == '{');
 	c->json++;
@@ -324,7 +331,7 @@ static parseStatus ParseObject(parserStack* c, jsonValue* v)
 	return ret;
 }
 
-static parseStatus ParseLiteral(parserStack* c, jsonValue* v, const char* literal, valueType type)
+static parseStatus ParseLiteral(parserContext* c, jsonValue* v, const char* literal, valueType type)
 {
 	assert(*c->json == literal[0]);
 	c->json++;
@@ -340,7 +347,7 @@ static parseStatus ParseLiteral(parserStack* c, jsonValue* v, const char* litera
 	return PARSE_OK;
 }
 
-static parseStatus ParseNumber(parserStack* c, jsonValue* v) {
+static parseStatus ParseNumber(parserContext* c, jsonValue* v) {
 	const char* p = c->json;
 
 	bool isPositive = true;
@@ -395,7 +402,7 @@ static parseStatus ParseNumber(parserStack* c, jsonValue* v) {
 	return PARSE_OK;
 }
 
-static parseStatus ParseArray(parserStack* c, jsonValue* v)
+static parseStatus ParseArray(parserContext* c, jsonValue* v)
 {
 	assert(*c->json == '[');
 	c->json++;
@@ -454,7 +461,7 @@ static parseStatus ParseArray(parserStack* c, jsonValue* v)
 	return ret;
 }
 
-static parseStatus ParseValue(parserStack* c, jsonValue* v) {
+static parseStatus ParseValue(parserContext* c, jsonValue* v) {
 	switch (*c->json) {
 	case 't':  return ParseLiteral(c, v, "true", TYPE_TRUE);
 	case 'f':  return ParseLiteral(c, v, "false", TYPE_FALSE);
@@ -470,7 +477,7 @@ static parseStatus ParseValue(parserStack* c, jsonValue* v) {
 parseStatus ParseJsonString(jsonValue* v, const char* json) {
 	assert(v != NULL);
 
-	parserStack c;
+	parserContext c;
 	c.json = json;
 	c.stack = nullptr;
 	c.size = c.top = 0;
@@ -500,6 +507,7 @@ double GetValueNumber(const jsonValue* v) {
 	assert(v && v->type == TYPE_NUMBER);
 	return v->num;
 }
+
 void SetValueNumber(jsonValue* v, double n) {
 	FreeValue(v);
 	v->num = n;
@@ -567,4 +575,111 @@ jsonValue* GetValueObjectValue(const jsonValue* v, size_t index)
 	assert(v && v->type == TYPE_OBJECT);
 	assert(index < v->obj.size);
 	return &v->obj.maps[index].value;
+}
+
+static void Stringify_string(parserContext* c, const char* s, size_t len)
+{
+	assert(s);
+
+	static const char hex_digits[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+
+	c->PushChar('\"');
+
+	for (size_t i = 0; i < len; i++)
+	{
+		switch (s[i])
+		{
+		case '\n': c->PushChar('\\'); c->PushChar('n'); break;
+		case '\r': c->PushChar('\\'); c->PushChar('r'); break;
+		case '\b': c->PushChar('\\'); c->PushChar('b'); break;
+		case '\f': c->PushChar('\\'); c->PushChar('f'); break;
+		case '\t': c->PushChar('\\'); c->PushChar('t'); break;
+		case '\"': c->PushChar('\\'); c->PushChar('\"'); break;
+		case '\\': c->PushChar('\\'); c->PushChar('\\'); break;
+			
+		default:
+			if (s[i] < 0x20)
+			{
+				c->PushChar('\\');
+				c->PushChar('u');
+				c->PushChar('0');
+				c->PushChar('0');
+				c->PushChar(hex_digits[s[i] >> 4]);
+				c->PushChar(hex_digits[s[i] & 0xf]);
+			}
+			else
+			{
+				c->PushChar(s[i]);
+			}
+			break;
+		}
+	}
+	c->PushChar('\"');
+}
+
+static int Stringify_value(parserContext* c, const jsonValue* v)
+{
+	int ret = 0;
+
+	switch (v->type) {
+	case TYPE_NULL:   c->PushStr("null", 4); break;
+	case TYPE_FALSE:  c->PushStr("false", 5); break;
+	case TYPE_TRUE:   c->PushStr("true", 4); break;
+	case TYPE_NUMBER: c->top -= static_cast<size_t>(32) - sprintf((char*)c->PushSz(32), "%.17g", v->num); break;
+	case TYPE_STRING:
+		Stringify_string(c, v->str.s, v->str.len);
+		break;
+	case TYPE_ARRAY: 
+		c->PushChar('[');
+		for (size_t i = 0; i < v->arr.size; i++)
+		{
+			Stringify_value(c, &v->arr.values[i]);
+			if (i < v->arr.size - 1)
+			{
+				c->PushChar(',');
+			}
+		}
+		c->PushChar(']');
+		break;
+	case TYPE_OBJECT:
+		c->PushChar('{');
+		for (size_t i = 0; i < v->obj.size; i++)
+		{
+			Stringify_string(c, v->obj.maps[i].key, v->obj.maps[i].keyLen);
+			c->PushChar(':');
+			Stringify_value(c, &v->obj.maps[i].value);
+			if (i < v->obj.size - 1)
+			{
+				c->PushChar(',');
+			}
+		}
+
+		c->PushChar('}');
+	}
+
+	return ret;
+}
+
+int Stringify(const jsonValue* v, char** json, size_t* length)
+{
+	assert(v);
+	assert(json);
+
+	int ret = STRINGIFY_OK;
+	parserContext context;
+	context.stack = (char*)malloc(context.size = PARSE_STRINGIFY_INIT_SIZE);
+	context.top = 0;
+
+	if ((ret = Stringify_value(&context, v) != STRINGIFY_OK)) {
+		free(context.stack);
+		*json = nullptr;
+		return ret;
+	}
+
+	*length = context.top;
+
+	context.PushChar('\0');
+	*json = context.stack;
+	context.stack = nullptr;
+	return ret;
 }

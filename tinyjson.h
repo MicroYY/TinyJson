@@ -31,6 +31,11 @@ enum parseStatus {
     PARSE_ERR_INVALID_UNICODE_SURROGATE
 };
 
+enum stringifyStatus {
+    STRINGIFY_OK,
+    STRINGIFY_ERR
+};
+
 struct jsonMap;
 
 struct jsonValue {
@@ -71,6 +76,8 @@ jsonValue* GetValueArrayElement(const jsonValue* v, size_t index);
 size_t      GetValueObjectSize(const jsonValue* v);
 const char* GetValueObjectKey(const jsonValue* v, size_t index);
 size_t      GetValueObjectKeyLength(const jsonValue* v, size_t index);
-jsonValue* GetValueObjectValue(const jsonValue* v, size_t index);
+jsonValue*  GetValueObjectValue(const jsonValue* v, size_t index);
+
+int Stringify(const jsonValue* v, char** json, size_t* length);
 
 #endif /* JSON_PARSER_H__ */
